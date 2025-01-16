@@ -146,79 +146,7 @@ def dashboard(request):
     
     return render(request, 'admin/biosystem/dashboard.html' , {'items':page_obj })
 
-''' my logic '''
-# @staff_member_required
-# def end_attendance(request):
-#     # before i denf the attendance i need to check that i have the data in session
-#     teacher = request.session.get('teacher') 
-#     subject = request.session.get('subject') 
-#     sessiontime = request.session.get('sessiontime') 
-    
-#     if not teacher or not subject or not sessiontime :
-#         messages.error(request, 'there is no attendance session to terminate')
-#         return redirect('startattendance')
-    
-#     try:
-#         teacher_instance = MasterTeacher.objects.get(name=teacher)
-#         subject_instance = MasterSubject.objects.get(name=subject)
-    
-#     except MasterTeacher.DoesNotExist:
-#         messages.error(request, 'can\'t create Instance of Teacher Object')
-#         return redirect('startattendance')
-    
-#     except MasterSubject.DoesNotExist:
-#         messages.error(request, 'can\'t create Instance of Subject Object')
-#         return redirect('startattendance')
-    
-#     students = BarcodeAttendanceData.objects.all()
-    
-#     # add to filter student at same date time and session
-    
-    
-#     for student in students:
-        
-#         attended_students = Attendance.objects.all().filter(
-#             date = datetime.date.today(),
-#             student=student,
-#             sessiontime=sessiontime,
-#             subject=subject_instance,
-#             teacher=teacher_instance,
-#             status='present'
-#             ).exists()
-        
-#         if student not in attended_students :
-            
-#             try:
-#                 student_instance = student.student
-#                 std_roll_no = student_instance.roll_no
-#                 if not student_instance :
-#                     messages.error(request, 'Student not found')
-#                     return redirect('admin:index')
-                    
-#                 absent_student = Attendance.objects.create(
-#                     session=sessiontime,
-#                     subject=subject_instance,
-#                     teacher=teacher_instance,
-#                     status='absent',
-#                     roll_no = std_roll_no ,
-#                     student=student_instance,
-#                 )
-#                 absent_student.save()
-                 
-#             except Exception as e:
-#                 messages.error(request, f'Error: {e}')
-#                 return redirect('admin:index')
-    
-#     messages.success(request, 'Absent students added Successfully')
-#     # pop all the session data and redirect to admin:index
-#     # request.session.pop('teacher')
-#     # request.session.pop('subject') 
-#     # request.session.pop('sessiontime')
-#     # request.session.pop('note')
-#     messages.success(request, 'Attendance Ended Successfully')
-#     return redirect('admin:index')
 
-'''chatgpt logic '''
 @staff_member_required
 def end_attendance(request):
     # Check that session data is available
@@ -407,9 +335,6 @@ def report_dashboard(request):
         'attendance_data': pivoted_attendance,
         'columns': column_headers,
     })
-
-
-    
 
 
 @staff_member_required
