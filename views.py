@@ -1,12 +1,103 @@
-from django.shortcuts import render , redirect 
-from django.http import HttpResponse
-from django.contrib.admin.views.decorators import staff_member_required
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth import login as auth_login, logout as auth_logout
+from django.contrib.auth.decorators import login_required 
 from django.contrib import messages
-from students.models import MasterTeacher , MasterSubject ,Student , BarcodeAttendanceData , Attendance
-from django.contrib.auth import logout as auth_logout
-from django.core.paginator import Paginator
-from datetime import datetime 
-import pandas as pd
+from django.http import HttpResponse, HttpResponseForbidden
+from django.contrib.auth.hashers import check_password, make_password
+from functools import wraps
+from .models import Student
+from django.core.files.storage import FileSystemStorage
+
+from django.contrib import admin
+
+# Decorator to check if the user is a student
+def student_required(view_func):
+    @wraps(view_func)
+    def _wrapped_view(request, *args, **kwargs):
+        if not request.user.is_authenticated or not request.user.is_student:
+            return HttpResponseForbidden("You must be a student to view this page.")
+        return view_func(request, *args, **kwargs)
+    return _wrapped_view
+
+# View to serve student image
+def student_image(request, student_id):
+    student = get_object_or_404(Student, id=student_id)
+    image_data = open(student.image.path, "rb").read()
+    return HttpResponse(image_data, content_type="image/jpeg")
+
+# Admin page
+def admin_page(request):
+    return admin.site.login(request)
+    
+# Home view
+def index(request):
+    return render(request, 'index.html')
+
+# About us view
+def about(request):
+    return render(request, 'about_us.html')
+
+# Developer view
+def developer_profile(request):
+    return render(request, 'dev.html')
+
+# Guide view
+def guide(request):
+    return render(request, 'guide.html')
+
+# Test view
+def test(request):
+    return render(request, 'test.html')
+
+# pagenotfount
+def pagenotfount(request):
+    return render(request, 'pagenotfount.html')
+
+def custom_page_not_found(request, exception):
+    return render(request, '404.html', status=404)
+
+handler404 = custom_page_not_found
+
+
+# Student login view
+def login(request):
+    if request.user.is_authenticated and not request.user.is_superuser:
+        return redirect('profile', student_id=request.user.id)
+    
+    if request.user.is_superuser:
+        return redirect('admin:index')
+    
+    if request.method == 'POST' :
+    
+        email = request.POST.get('email')
+        password = request.POST.get('password')
+        
+        if not email or not password :
+            messages.error(request, "please fill all the fields")
+            print("please fill all the fields")
+            return redirect('login')
+            
+        user = Student.objects.filter(email=email).first()
+
+        if user :
+            if check_password(password, user.password):
+            
+                auth_login(request, user)
+                messages.success(request, f'User {email} logged in successfully')
+                print(f'User {email} logged in successfully')
+                return redirect('profile', student_id=user.id)
+            
+            else:
+                messages.error(request, 'Incorrect password.')
+                print("Incorrect password.")
+                return redirect('login')
+        else :
+            messages.error(request, "Incorrect User ! ") 
+            print("Incorrect User ! ")
+            return redirect('login')
+            
+    return render(request, 'registration/login.html', {'messages': messages.get_messages(request)})
+
 
 # Logout view
 def logout(request):
@@ -15,328 +106,235 @@ def logout(request):
     messages.success(request, 'You have logged out successfully!')
     return redirect('index')
 
-@staff_member_required
-def startattendance(request):
-    
-    if request.session.get('teacher') is not None:
-        request.session.pop('teacher')
-    if request.session.get('subject') is not None:
-        request.session.pop('subject')
-    if request.session.get('sessiontime') is not None:
-        request.session.pop('sessiontime')
-    if request.session.get('note') is not None:
-        request.session.pop('note')
+# Registration view
+def register(request):
+    if request.user.is_authenticated:
+        return redirect('profile', student_id=request.user.id)
+
+    if request.method == 'POST':
+        std_roll = request.POST.get('std_Roll')
+        std_name = request.POST.get('std_name')
+        std_gender = request.POST.get('std_gender')
+        std_dob = request.POST.get('std_dob')
+        std_blood_group = request.POST.get('std_blood_group')
+        std_email = request.POST.get('std_email')
+        std_phone = request.POST.get('std_phone')
+        std_addr = request.POST.get('std_addr')
+        std_faculty = request.POST.get('std_faculty')
+        std_subject = request.POST.get('std_subject')
+        std_acd_year = request.POST.get('std_acd_year')
+        password = request.POST.get('password')
+        confirm_password = request.POST.get('confirm_password')
+        std_image = request.FILES.get('std_image')
+
+        if password != confirm_password:
+            messages.error(request, 'Passwords do not match!')
+            return redirect('register')
+
+        if Student.objects.filter(email=std_email).exists():
+            messages.error(request, 'User with the same Email already exists!')
+            return redirect('register')
+
+        if not std_image:
+            messages.error(request, 'Profile image is required!')
+            return redirect('register')
+
+        student = Student(
+            roll_no=std_roll,
+            name=std_name,
+            gender=std_gender,
+            dob=std_dob,
+            blood_group=std_blood_group,
+            email=std_email,
+            phone=std_phone,
+            address=std_addr,
+            faculty=std_faculty,
+            subject=std_subject,
+            academic_year=std_acd_year,
+            image=std_image,
+            password=make_password(password)
+        )
+        student.save()
+        auth_login(request, student)
+
+        messages.success(request, 'Successful Registration!')
+        auth_login(request, student)
         
-    # messages.success(request , "session cleared")
+        return redirect('profile', student_id=student.id)
+    
+    else:
+        return render(request, 'register.html')
+
+
+# Student profile view
+@login_required
+def profile(request, student_id):
+    student = get_object_or_404(Student, id=student_id)
+
+    if request.user.is_superuser:
+        messages.error(request, "Admin has no permission to view student profiles.")
+        return redirect("index")
+
+    if student.id != request.user.id:
+        messages.error(request, "You do not have permission to view this profile.")
+        return redirect('index')
+
+    return render(request, 'registration/std_profile.html', {'student': student})
+
+
+# Update login password view
+@login_required
+def login_pass_update(request):
+    if request.method == 'POST':
+        old_password = request.POST.get('oldpass')
+        new_password = request.POST.get('newpass')
+        confirm_new_password = request.POST.get('conf_newpass')
+
+        if not old_password or not new_password or not confirm_new_password:
+            messages.warning(request, "Please fill out all fields.")
+            return redirect('profile', student_id=request.user.id)
+
+        if old_password == new_password:
+            messages.error(request, "The new password cannot be the same as the old password.")
+            return redirect('profile', student_id=request.user.id)
+
+        if new_password != confirm_new_password:
+            messages.error(request, "The new passwords do not match.")
+            return redirect('profile', student_id=request.user.id)
+
+        if not check_password(old_password, request.user.password):
+            messages.error(request, "The old password you entered is incorrect.")
+            return redirect('profile', student_id=request.user.id)
+
+        request.user.password = make_password(new_password)
+        request.user.save()
+        messages.success(request, 'Password has been updated, please log in again.')
+        return redirect('login')
+
+    return redirect('profile', student_id=request.user.id)
+
+
+# Update password (forgotten password)
+def update_password(request):
+    if request.user.is_authenticated:
+        return redirect('index')
     
     if request.method == 'POST':
-        teacher = request.POST.get('teacher')
-        subject = request.POST.get('subject')
-        sessiontime = request.POST.get('session')
-        
-        # if not teacher or not subject or not sessiontime:
-        #     messages.error(request, 'Please fill all the fields')
-        #     return redirect('startattendance')
-        
-         # here i need the logic that there is no teacher no record with same date with same teacher same sessiontime 
-        
-        existing_record = Attendance.objects.filter(
-            date=datetime.today(),
-            teacher__name=teacher,
-            sessiontime=sessiontime
-        ).exists()
+        email = request.POST.get('email')
+        phone = request.POST.get('phone')
 
-        if existing_record:
-            messages.error(request, 'Attendance for this teacher at the same session time already exists for today.')
-            return redirect('startattendance')
+        if not email or not phone:
+            messages.error(request, "Email and Phone Number fields can't be empty")
+            return redirect('update_password')
         
-        request.session['teacher'] = teacher
-        request.session['subject'] = subject
-        request.session['sessiontime'] = sessiontime
+        user = Student.objects.filter(email=email).first()
 
-        messages.success(request, 'attendance started')
-        return redirect('attendance')
-        
-    teachers = MasterTeacher.objects.all()
-    subjects = MasterSubject.objects.all()
-    return render(request, 'admin/biosystem/start.html', {'teachers':teachers , 'subjects' : subjects} )
+        if not user:
+            messages.error(request, "No such user exists")
+            return redirect('update_password')
+
+        if phone != user.phone:
+            messages.error(request, "There is no user with the same phone number")
+            return redirect('update_password')
+
+        request.session['cemail'] = email
+        return redirect('up_ppass')
+    else:
+        return render(request, 'update_password.html')
 
 
-@staff_member_required
-def attendance(request):
-    
-    teacher = request.session.get('teacher') 
-    subject = request.session.get('subject') 
-    sessiontime = request.session.get('sessiontime') 
-    
-    if not teacher or not subject or not sessiontime :
-        messages.error(request, 'there is no attendance data in session')
-        return redirect('startattendance')
+# Reset password view
+def up_ppass(request):
+    if request.user.is_authenticated:
+        return redirect('index')
 
-    try:
-        teacher_instance = MasterTeacher.objects.get(name=teacher)
-        subject_instance = MasterSubject.objects.get(name=subject)
-    
-    except MasterTeacher.DoesNotExist:
-        messages.error(request, 'Teacher not found')
-        return redirect('startattendance')
-    
-    except MasterSubject.DoesNotExist:
-        messages.error(request, 'Subject not found')
-        return redirect('startattendance')
-    
-    # i have input form for taking student barcode only 
-    
     if request.method == 'POST':
-        
-        barcode_data = request.POST.get('barcode_data')
-        
-        if not barcode_data:
-            messages.error(request, 'Please scan the barcode again')
-            return redirect('attendance')
-        
-        try :
-            std_with_same_barcode = BarcodeAttendanceData.objects.get(barcode_data = barcode_data)
-        except BarcodeAttendanceData.DoesNotExist :
-            
-            messages.error(request, "there is no student with same Barcode")
-            return redirect('attendance')
-        
-        student = std_with_same_barcode.student
-        if not student :
-            messages.error(request, "error to load the student object")
-            return redirect('attendance')
-    
-    #    check that student is not in same session and and date with same teacher before i add his attendance
-        
-        existing_attendance = Attendance.objects.filter(
-            date = datetime.today(),
-            student=student,
-            sessiontime=sessiontime,
-            subject=subject_instance,
-            teacher=teacher_instance,
-            status='present'
-        ).exists()
+        uemail = request.session.get('cemail')
+        new_pass = request.POST.get('newpass')
+        conf_newpass = request.POST.get('conf_newpass')
 
-        if existing_attendance :
-            messages.error(request, 'Attendance for this student in the same session and date with the same teacher already exists')
-            return redirect('attendance')
-        
-        try :
-            roll_no = std_with_same_barcode.student.roll_no
-            attendance_record = Attendance.objects.create(sessiontime=sessiontime,  subject=subject_instance, teacher=teacher_instance,  status='present', roll_no=roll_no , student = student)
-            attendance_record.save()
-            messages.success(request, 'Attendance Marked Successfully')
-        
-        except Exception as e:
-            messages.error(request, f'Error: {e}')
-            return redirect('attendance')
-    
-    return render(request , 'admin/biosystem/attendance.html')
-    
-    
-@staff_member_required
-def dashboard(request):
-    # for latest attendance
-    records = Attendance.objects.all().order_by('-time')
-    # records = Attendance.objects.all()
-    paginator = Paginator(records, 15)
-    page_number = request.GET.get('page')
-    page_obj = paginator.get_page(page_number)
-    
-    return render(request, 'admin/biosystem/dashboard.html' , {'items':page_obj })
+        if not uemail:
+            messages.error(request, "Email does not exist in session, please try again")
+            return redirect('update_password')
 
+        if not new_pass or not conf_newpass:
+            messages.error(request, "Make sure you inserted some data")
+            return redirect('up_ppass')
 
-@staff_member_required
-def end_attendance(request):
-    # Check that session data is available
-    teacher = request.session.get('teacher') 
-    subject = request.session.get('subject') 
-    sessiontime = request.session.get('sessiontime') 
-    
-    if not teacher or not subject or not sessiontime:
-        messages.error(request, 'Attendance session data is missing.')
-        return redirect('startattendance')
-    
-    try:
-        teacher_instance = MasterTeacher.objects.get(name=teacher)
-        subject_instance = MasterSubject.objects.get(name=subject)
-    except (MasterTeacher.DoesNotExist, MasterSubject.DoesNotExist) as e:
-        messages.error(request, f'Error creating instance: {e}')
-        return redirect('startattendance')
-    
-    # Filter students who have attended
-    attended_students = Attendance.objects.filter(
-        date=datetime.today(),
-        sessiontime=sessiontime,
-        subject=subject_instance,
-        teacher=teacher_instance,
-        status='present'
-    ).values_list('student', flat=True)
-    
-    students = BarcodeAttendanceData.objects.exclude(student__in=attended_students)
-    
-    for student in students:
-        try:
-            student_instance = student.student
-            if not student_instance:
-                messages.error(request, 'Student not found')
-                return redirect('admin:index')
-                
-            Attendance.objects.create(
-                sessiontime=sessiontime,
-                subject=subject_instance,
-                teacher=teacher_instance,
-                status='absent',
-                roll_no=student_instance.roll_no,
-                student=student_instance,
-            )
-        except Exception as e:
-            messages.error(request, f'Error: {e}')
-            return redirect('admin:index')
-    
-    
-    # Clean up session data
-    request.session.pop('teacher', None)
-    request.session.pop('subject', None)
-    request.session.pop('sessiontime', None)
-    request.session.pop('note', None)
-    
-    messages.success(request, 'Absent students added Attendance ended successfully')
-    return redirect('admin:index')
-
-
-@staff_member_required
-def add_student(request):
-    if request.method == 'POST':
+        if new_pass != conf_newpass:
+            messages.error(request, "Passwords do not match")
+            return redirect('up_ppass')
         
-        student_name = request.POST.get('student_name')
-        barcode_data = request.POST.get('barcode_data')
-        
-        if student_name and barcode_data :
-            try:
-                student = Student.objects.get(name=student_name)
-                # std_Roll_number = Student.objects.get(name=student_name).roll_no
-                if not BarcodeAttendanceData.objects.filter(student=student).exists():
-                    student_data = BarcodeAttendanceData.objects.create(student=student, barcode_data=barcode_data)
-                    student_data.save()
-                    messages.success(request, 'Student Added Successfully')
-                else:
-                    messages.error(request, "Student with the same name is already in the Barcode table")
-                    return redirect('add_student')
-                
-            except Student.DoesNotExist:
-                messages.error(request, 'Student not found')
-                return redirect('add_student')
+        user = Student.objects.filter(email=uemail).first()
+        if user:
+            user.password = make_password(new_pass)
+            user.save()
+            request.session.pop('cemail')
+            messages.success(request, "Password updated successfully")
+            return redirect('login')
         else:
-            messages.error(request, 'Please fill all the fields')
-            return redirect('add_student')
-            
-        return redirect('add_student')
-            
-    students = Student.objects.all()
-    return render(request, 'admin/biosystem/addstudent.html', {'students':students})
+            messages.error(request, "User does not exist to update their password")
+
+    return render(request, 'up_ppass.html')
 
 
-@staff_member_required
-def report(request):
-    # Query to get the attendance data with the necessary fields
-    attendance_data = Attendance.objects.values(
-        'student__roll_no', 'student__name', 'date', 'teacher__name', 'sessiontime', 'status'
-    )
+# Update student bio
+@login_required
+def std_update_bio(request):
+    if request.method == 'POST':
+        fname = request.POST.get('f_name')
+        lname = request.POST.get('l_name')
+        city = request.POST.get('city')
+        password = request.POST.get('password')
+        phone = request.POST.get('phone')
 
-    # Convert data to pandas DataFrame
-    df = pd.DataFrame(attendance_data)
+        if not fname or not lname or not city or not phone or not password:
+            messages.error(request, "Please fill all fields; no empty data required")
+            return redirect('profile', student_id=request.user.id)
 
-    # Create a new column combining date, teacher name, and session time as the column header
-    df['date_teacher_session'] = df['date'].astype(str) + ' | ' + df['teacher__name'] + ' | ' + df['sessiontime']
+        if not check_password(password, request.user.password):
+            messages.error(request, "Wrong password")
+            return redirect('profile', student_id=request.user.id)
 
-    # Pivot the data - use student roll no as index, and date_teacher_session as columns
-    pivot_df = df.pivot_table(
-        index='student__roll_no',
-        columns='date_teacher_session',
-        values='status',
-        aggfunc=lambda x: x.max(),  # We assume max works here since the status can only be 'present' or 'absent'
-        fill_value='absent'  # Default to 'absent' if no data
-    )
+        request.user.name = f"{fname.capitalize()} {lname.capitalize()}"
+        request.user.phone = phone
+        request.user.address = city.capitalize()
+        request.user.save()
+        messages.success(request, "Your bio data has been updated. Change only when necessary")
+        return redirect('profile', student_id=request.user.id)
 
-    # Convert the pivoted DataFrame to a list of dictionaries for easy rendering in HTML
-    pivoted_attendance = pivot_df.reset_index().to_dict(orient='records')
-
-    # Prepare column headers as a list (excluding the roll number column)
-    column_headers = pivot_df.columns.tolist()
-
-    # Count present and absent times for each student
-    for student in pivoted_attendance:
-        present_count = 0
-        absent_count = 0
-        # Loop through each column (attendance record for each session) for a student
-        for col in column_headers:
-            if student.get(col) == 'present':
-                present_count += 1
-            elif student.get(col) == 'absent':
-                absent_count += 1
-        # Add the counts to the student dictionary
-        student['present_count'] = present_count
-        student['absent_count'] = absent_count
-
-    # Pass the pivoted data and column headers to the template
-    return render(request, 'report.html', {
-        'attendance_data': pivoted_attendance,
-        'columns': column_headers,
-    })
+    return redirect('profile', student_id=request.user.id)
 
 
+# Update student photo
+@login_required
+def update_std_photo(request):
+    if request.method == 'POST':
+        password = request.POST.get('password')
+        file = request.FILES.get('image')
 
-@staff_member_required
-def report_dashboard(request):
-    # Query to get the attendance data with the necessary fields
-    attendance_data = Attendance.objects.values(
-        'student__roll_no', 'student__name', 'date', 'teacher__name', 'sessiontime', 'status'
-    )
+        if not file:
+            messages.error(request, "Please upload photo and confirm your password")
+            return redirect('profile', student_id=request.user.id)
 
-    # Convert data to pandas DataFrame
-    df = pd.DataFrame(attendance_data)
+        if not password:
+            messages.error(request, "Please confirm your password")
+            return redirect('profile', student_id=request.user.id)
 
-    # Create a new column combining date, teacher name, and session time as the column header
-    df['date_teacher_session'] = df['date'].astype(str) + ' | ' + df['teacher__name'] + ' | ' + df['sessiontime']
+        if not check_password(password, request.user.password):
+            messages.error(request, "Wrong password")
+            return redirect('profile', student_id=request.user.id)
 
-    # Pivot the data - use student roll no as index, and date_teacher_session as columns
-    pivot_df = df.pivot_table(
-        index='student__roll_no',
-        columns='date_teacher_session',
-        values='status',
-        aggfunc=lambda x: x.max(),  # We assume max works here since the status can only be 'present' or 'absent'
-        fill_value='absent'  # Default to 'absent' if no data
-    )
+        fs = FileSystemStorage()
+        filename = fs.save(file.name, file)
+        file_url = fs.url(filename)
+        request.user.image = file_url
+        request.user.save()
+        messages.success(request, "Profile image updated")
+        return redirect('profile', student_id=request.user.id)
 
-    # Convert the pivoted DataFrame to a list of dictionaries for easy rendering in HTML
-    pivoted_attendance = pivot_df.reset_index().to_dict(orient='records')
-
-    # Prepare column headers as a list (excluding the roll number column)
-    column_headers = pivot_df.columns.tolist()
-
-    # Count present and absent times for each student
-    for student in pivoted_attendance:
-        present_count = 0
-        absent_count = 0
-        # Loop through each column (attendance record for each session) for a student
-        for col in column_headers:
-            if student.get(col) == 'present':
-                present_count += 1
-            elif student.get(col) == 'absent':
-                absent_count += 1
-        # Add the counts to the student dictionary
-        student['present_count'] = present_count
-        student['absent_count'] = absent_count
-
-    # Pass the pivoted data and column headers to the template
-    return render(request, 'admin/biosystem/report.html', {
-        'attendance_data': pivoted_attendance,
-        'columns': column_headers,
-    })
+    return redirect('profile', student_id=request.user.id)
 
 
-@staff_member_required
-def my_admin_view4(request):
-    return HttpResponse('This is my custom admin page 4.')
+
+
