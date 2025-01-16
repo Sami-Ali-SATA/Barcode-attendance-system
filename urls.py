@@ -26,15 +26,7 @@ admin.site.index_title = "Administration"
 
 from .views import *
 
-# custom_admin_patterns = [
-#     # path('', custom_admin_index, name='custom_admin_index'),
-#     path('startattendance/', startattendance, name='startattendance'),
-#     path('dashboard/', dashboard, name='dashboard'),
-#     path('add_student/', add_student, name='add_student'),
-#     path('my-admin-page4/', my_admin_view4, name='my_custom_view4'),
-# ]
 
-# admin.site.index_template = "admin/index.html"
 
 urlpatterns = [
     path('' , views.index ),
@@ -45,7 +37,6 @@ urlpatterns = [
     path('pagenotfount', views.pagenotfount, name='page_not_found'),
     path('admin_page', views.admin_page, name='admin_page'),
     # for admin
-    # path('admin/', include(custom_admin_patterns)),
     path('admin/startattendance/', startattendance, name='startattendance'),
     path('admin/end_attendance/', end_attendance, name='end_attendance'),
     path('admin/dashboard/', dashboard, name='dashboard'),
@@ -53,7 +44,6 @@ urlpatterns = [
     path('admin/attendance/' , attendance , name='attendance'),
     path('admin/report_dashboard/', report_dashboard, name='report_dashboard'),
     path('admin/report/', report, name='report'),
-    # path('admin/export_attendance/', export_attendance, name='export_attendance'),
     
     path('admin/', admin.site.urls, name='admin'),
     # Developer page
